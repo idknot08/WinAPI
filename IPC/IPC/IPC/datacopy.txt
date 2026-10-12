@@ -1,0 +1,227 @@
+// Them file nay vao project. Trong IPC.cpp chi khai bao:
+// int RunCopyDataMode(bool isFirst);
+// Xoa ham RunCopyDataMode tam thoi; giu nguyen wmain va mutex hien tai.
+#include <Windows.h>
+#include <iostream>
+#include <string>
+#include <cstring>
+
+#pragma comment(lib, "User32.lib")
+
+namespace copydata_demo
+{
+constexpr wchar_t WINDOW_CLASS[] = L"IPC.CopyData.Demo.Window";
+constexpr wchar_t FIRST_TITLE[] = L"IPC.CopyData.Demo.First";
+constexpr wchar_t SECOND_TITLE[] = L"IPC.CopyData.Demo.Second";
+constexpr ULONG_PTR TEXT_MESSAGE = 1;
+constexpr DWORD MAX_TEXT_BYTES = 64 * 1024;
+constexpr UINT WM_TEXT_READY = WM_APP + 1;
+
+struct CopyDataState
+{
+    HWND peer = nullptr;        // HWND ben kia; duoc luu de gui tra loi.
+    std::wstring received;     // Ban sao noi dung da nhan.
+    bool hasMessage = false;   // Da nhan duoc mot tin nhan chua?
+};
+
+// Windows goi ham nay khi cua so cua ta nhan message.
+LRESULT CALLBACK CopyDataWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_NCCREATE)
+    {
+        auto* creation = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(window, GWLP_USERDATA,
+                         reinterpret_cast<LONG_PTR>(creation->lpCreateParams));
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+
+    auto* state = reinterpret_cast<CopyDataState*>(
+        GetWindowLongPtrW(window, GWLP_USERDATA));
+
+    if (message == WM_COPYDATA)
+    {
+        auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+        HWND sender = reinterpret_cast<HWND>(wParam);
+
+        if (!state || !data || !sender || state->hasMessage)
+            return FALSE;
+        if (state->peer && state->peer != sender)
+            return FALSE;
+        if (data->dwData != TEXT_MESSAGE || data->cbData > MAX_TEXT_BYTES ||
+            data->cbData % sizeof(wchar_t) != 0)
+            return FALSE;
+        if (data->cbData != 0 && data->lpData == nullptr)
+            return FALSE;
+
+        // Copy ngay: lpData chi hop le trong luc xu ly WM_COPYDATA.
+        state->received.assign(data->cbData / sizeof(wchar_t), L'\0');
+        if (data->cbData != 0)
+            std::memcpy(&state->received[0], data->lpData, data->cbData);
+
+        // Tin noi bo de GetMessage thoat cho va kiem tra hasMessage.
+        // Khong PostMessage(WM_COPYDATA).
+        if (!PostMessageW(window, WM_TEXT_READY, 0, 0))
+            return FALSE;
+
+        state->peer = sender;
+        state->hasMessage = true;
+        return TRUE;
+    }
+
+    if (message == WM_TEXT_READY)
+        return 0;
+    if (message == WM_DESTROY)
+    {
+        PostQuitMessage(0);
+        return 0;
+    }
+
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+bool SendCopyData(HWND peer, HWND self, const std::wstring& text)
+{
+    if (text.size() > MAX_TEXT_BYTES / sizeof(wchar_t))
+    {
+        SetLastError(ERROR_BUFFER_OVERFLOW);
+        return false;
+    }
+
+    COPYDATASTRUCT data{};
+    data.dwData = TEXT_MESSAGE;
+    data.cbData = static_cast<DWORD>(text.size() * sizeof(wchar_t));
+    data.lpData = const_cast<wchar_t*>(text.c_str());
+
+    DWORD_PTR accepted = FALSE;
+    SetLastError(ERROR_SUCCESS);
+    LRESULT delivered = SendMessageTimeoutW(peer, WM_COPYDATA,
+        reinterpret_cast<WPARAM>(self), reinterpret_cast<LPARAM>(&data),
+        SMTO_BLOCK, 5000, &accepted);
+
+    if (delivered == 0)
+    {
+        if (GetLastError() == ERROR_SUCCESS)
+            SetLastError(ERROR_GEN_FAILURE);
+        return false;
+    }
+    if (accepted == FALSE)
+    {
+        SetLastError(ERROR_INVALID_DATA);
+        return false;
+    }
+    return true;
+}
+
+bool ReceiveCopyData(CopyDataState& state, std::wstring& text)
+{
+    MSG message{};
+    while (!state.hasMessage)
+    {
+        BOOL result = GetMessageW(&message, nullptr, 0, 0);
+        if (result == -1)
+            return false;
+        if (result == 0)
+        {
+            SetLastError(ERROR_OPERATION_ABORTED);
+            return false;
+        }
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+
+    text = state.received;
+    state.hasMessage = false;
+    return true;
+}
+} // namespace copydata_demo
+
+int RunCopyDataMode(bool isFirst)
+{
+    using namespace copydata_demo;
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    CopyDataState state{};
+
+    // 1. Dang ky loai cua so va ham nhan message cua no.
+    WNDCLASSW windowClass{};
+    windowClass.lpfnWndProc = CopyDataWindowProc;
+    windowClass.hInstance = instance;
+    windowClass.lpszClassName = WINDOW_CLASS;
+    if (!RegisterClassW(&windowClass))
+    {
+        std::wcerr << L"RegisterClassW failed: " << GetLastError() << L'\n';
+        return 1;
+    }
+
+    // 2. Moi process tao mot cua so an. &state duoc gui toi WM_NCCREATE.
+    const wchar_t* title = isFirst ? FIRST_TITLE : SECOND_TITLE;
+    HWND self = CreateWindowExW(0, WINDOW_CLASS, title, 0,
+                               0, 0, 0, 0, nullptr, nullptr, instance, &state);
+    if (!self)
+    {
+        std::wcerr << L"CreateWindowExW failed: " << GetLastError() << L'\n';
+        UnregisterClassW(WINDOW_CLASS, instance);
+        return 1;
+    }
+
+    // 3. Instance 2 tim instance 1. Instance 1 hoc HWND tu wParam khi nhan.
+    if (!isFirst)
+    {
+        for (int attempt = 0; attempt < 100 && !state.peer; ++attempt)
+        {
+            state.peer = FindWindowW(WINDOW_CLASS, FIRST_TITLE);
+            if (!state.peer)
+                Sleep(100);
+        }
+        if (!state.peer)
+        {
+            std::wcerr << L"Khong tim thay cua so instance 1 sau khoang 10 giay.\n";
+            DestroyWindow(self);
+            UnregisterClassW(WINDOW_CLASS, instance);
+            return 1;
+        }
+    }
+
+    std::wcout << (isFirst ? L"Instance 1: nhan truoc.\n" : L"Instance 2: gui truoc.\n");
+    std::wcout << L"Nhap /quit khi den luot gui de thoat.\n";
+
+    // 4. Cung mot logic gui/nhan cho ca hai process.
+    bool myTurn = !isFirst;
+    int exitCode = 0;
+    while (true)
+    {
+        std::wstring text;
+        if (myTurn)
+        {
+            std::wcout << L"You: " << std::flush;
+            if (!std::getline(std::wcin, text))
+                text = L"/quit";
+
+            if (!SendCopyData(state.peer, self, text))
+            {
+                std::wcerr << L"SendCopyData failed: " << GetLastError() << L'\n';
+                exitCode = 1;
+                break;
+            }
+        }
+        else
+        {
+            if (!ReceiveCopyData(state, text))
+            {
+                std::wcerr << L"ReceiveCopyData failed: " << GetLastError() << L'\n';
+                exitCode = 1;
+                break;
+            }
+            std::wcout << L"Peer: " << text << L'\n';
+        }
+
+        if (text == L"/quit")
+            break;
+        myTurn = !myTurn;
+    }
+
+    // 5. HWND dung DestroyWindow; roleMutex van do wmain dong.
+    if (IsWindow(self))
+        DestroyWindow(self);
+    UnregisterClassW(WINDOW_CLASS, instance);
+    return exitCode;
+}
