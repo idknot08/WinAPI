@@ -164,17 +164,17 @@ void Ctuan1Dlg::OnBnClickedButtonA()
 	// TODO: Add your control notification handler code here
 
 	CFolderPickerDialog ObCFolderPickerDialog;
-	// ObCFolderPickerDialog.DoModal(); // mở hộp thoại chọn folder thành công
+	
 	if (ObCFolderPickerDialog.DoModal() == IDOK) {
 		m_folderPath = ObCFolderPickerDialog.GetPathName();
-		m_filePath = m_folderPath + _T("\\data1.txt"); // _T : flex Unicode và ANSI 
+		m_filePath = m_folderPath + _T("\\data1.txt"); // Chuỗi theo cấu hình Unicode/ANSI.
 		SetDlgItemTextW(IDC_EDIT_B1, m_filePath);
 	}
 	else {
 		return; // dừng khi không chọn file
 	}
 
-	// get text in edit box
+	// Lấy nội dung cần ghi.
 	CString strA;
 	GetDlgItemTextW(IDC_EDIT_A, strA);
 
@@ -198,10 +198,10 @@ void Ctuan1Dlg::OnBnClickedButtonA()
 	DWORD bytesToWrite = strA.GetLength() * sizeof(__wchar_t);
 	BOOL checkWrite = ::WriteFile(
 		hFile,
-		strA.GetString(),  // GetString() trả về con trỏ tới ký tự đầu tiên = địa chỉ chuỗi.
+		strA.GetString(),  
 		bytesToWrite,
-		&bytesWriten, // Con trỏ phải trỏ tới 1 vùng nhớ hợp lệ trước khi ghi
-		0 // Tham số này chỉ có thể là NULL khi tham số lpOverlapped không phải là NULL. (msdn)
+		&bytesWriten, 
+		0 // Ghi đồng bộ, không dùng OVERLAPPED.
 	);
 
 	::CloseHandle(hFile);
@@ -255,7 +255,7 @@ void Ctuan1Dlg::OnBnClickedButtonB()
 	}
 
 
-	// Read File
+	// Đọc nội dung file.
 	// 1. Lấy kích thước file
 	
 	LARGE_INTEGER lpFileSize;
@@ -265,7 +265,7 @@ void Ctuan1Dlg::OnBnClickedButtonB()
 		return;
 	};
 
-	if (lpFileSize.QuadPart > MAXDWORD) { // khác kích thước vẫn so sánh được, C++ tự chuyển.
+	if (lpFileSize.QuadPart > MAXDWORD) { // Chưa hỗ trợ đọc file lớn hơn MAXDWORD.
 		MessageBoxW(L"File quá lớn, không để đọc trong 1 lần, chưa xử lý");
 		::CloseHandle(hFile);
 		return;
@@ -279,8 +279,8 @@ void Ctuan1Dlg::OnBnClickedButtonB()
 		NULL,
 		sizeMem, // thêm chỗ cho ký tự kết thúc
 		MEM_RESERVE | MEM_COMMIT,
-		// Đặt chỗ địa chỉ + cho phép sử dụng vùng nhớ ngay
-		// Nếu chỉ đặt chỗ thì lần sau sử dụng cần gọi lại 1 lần nữa vơi MEM_COMMIT
+		// Đặt chỗ và cấp bộ nhớ cùng lúc.
+		
 		PAGE_READWRITE
 	);
 	if (buffer == NULL)

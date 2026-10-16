@@ -52,7 +52,7 @@ void CAuthDlg::OnStnClickedStaticB()
 }
 
 BOOL CAuthDlg::OnInitDialog() {
-	// Vẫn phải gọi hàm gốc để khởi tạo CDialogEx trước để gọi Dialog mặc định , sau đó mới tùy chỉnh
+	// Khởi tạo dialog gốc trước khi tùy chỉnh giao diện.
 	CDialogEx::OnInitDialog();
 
 	// Giao diện ban đầu khi chạy chương trình
@@ -62,7 +62,7 @@ BOOL CAuthDlg::OnInitDialog() {
 }
 
 
-// Update giao dien
+// Cập nhật giao diện đăng nhập/đăng ký.
 void CAuthDlg::UpdateAuthUI() {
 	if (m_bRegisterMode) {
 		GetDlgItem(IDC_STATIC_A)->ShowWindow(SW_SHOW);
@@ -70,7 +70,7 @@ void CAuthDlg::UpdateAuthUI() {
 		GetDlgItem(IDC_LOGIN)->ShowWindow(SW_HIDE);
 		GetDlgItem(IDC_REGISTER)->ShowWindow(SW_SHOW);
 
-		// Update title
+		// Đổi tiêu đề.
 		SetDlgItemTextW(IDC_STATIC_B, L"Đăng ký");
 		SetDlgItemTextW(IDC_BUTTON_MODE, L"Đăng nhập");
 	}
@@ -80,14 +80,14 @@ void CAuthDlg::UpdateAuthUI() {
 		GetDlgItem(IDC_LOGIN)->ShowWindow(SW_SHOW);
 		GetDlgItem(IDC_REGISTER)->ShowWindow(SW_HIDE);
 
-		// Update title
+		// Đổi tiêu đề.
 		SetDlgItemTextW(IDC_STATIC_B, L"Đăng nhập");
 		SetDlgItemTextW(IDC_BUTTON_MODE, L"Đăng ký");
 	}
 
 }
 
-// Load danh sách tài khoản và nạp vào vector
+// Đọc danh sách tài khoản từ file.
 void CAuthDlg::dumpAccount()
 {
     accounts.clear();
@@ -250,7 +250,7 @@ void CAuthDlg::dumpAccount()
     }
 }
 
-// Kiểm tra toàn khoản có bị trùng với các tài khoản cũ không
+// Kiểm tra tên tài khoản đã tồn tại.
 BOOL CAuthDlg::checkAccount(
     const CString& sUserName,
     const CString& sPass)
@@ -286,7 +286,7 @@ BOOL CAuthDlg::addAccount(
         return FALSE;
     }
 
-    // Kiểm tra trùng username
+    // Kiểm tra trùng tên tài khoản.
     for (const Account& account : accounts)
     {
         if (account.sUserName == sUserName)
@@ -392,7 +392,7 @@ void CAuthDlg::OnBnClickedLogin()
 	// TODO: Add your control notification handler code here
 
 
-	// 1. Nhận giá trị từ  ô nhập
+	// Lấy thông tin từ ô nhập.
 	CString strUserName, strPass;
 	GetDlgItemTextW(IDC_EDIT_USERNAME, strUserName);
 	GetDlgItemTextW(IDC_EDIT_PASSWORD, strPass);
@@ -447,7 +447,7 @@ void CAuthDlg::OnBnClickedButtonMode()
 
 }
 
-// Part 2
+
 
 CString CAuthDlg::GetLoggedInUser() const
 {
